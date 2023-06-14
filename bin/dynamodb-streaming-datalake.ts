@@ -17,7 +17,7 @@ new DynamodbStreamingDatalakeStack(app, 'DynamodbStreamingDatalakeStack', {
      * want to deploy the stack to. */
     env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
     stackName: 'dynamodb-streaming-datalake-demo',
-    datalakeBucketName: `104-dev01-datalake`
-
+    datalakeBucketName: `104-dev01-datalake`,
+    datalakeBucketKeyAliasName: `alias/DataLake`
     /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 });
