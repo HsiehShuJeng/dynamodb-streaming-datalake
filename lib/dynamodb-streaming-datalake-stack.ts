@@ -15,8 +15,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: DynamodbStreamingDatalakeStackProps) {
         super(scope, id, props);
 
-        const datalakeBucketKeyAlias = kms.Alias.fromAliasName(this, 'DataLakeBucketKeyAlias', props.datalakeBucketKeyAliasName);
-        const datalakeBucket = (props?.datalakeBucketName) ? s3.Bucket.fromBucketName(this, 'DataLakeBucket', props.datalakeBucketName) : new s3.Bucket(this, 'DatalakeBucket', {
+        const datalakeBucketKey = kms.Key.fromLookup(this, 'DataLakeKmsKey', { aliasName: props.datalakeBucketKeyAliasName })
+        const datalakeBucket = (props?.datalakeBucketName) ? s3.Bucket.fromBucketName(this, 'DatalakeBucket', props.datalakeBucketName) : new s3.Bucket(this, 'DatalakeBucket', {
             bucketName: `dynamodb-streaming-datalake-${cdk.Aws.ACCOUNT_ID}`,
             blockPublicAccess: {
                 blockPublicAcls: true,
@@ -29,7 +29,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             streamName: 'ddb-exclusive-stream',
             shardCount: 10,
             encryption: kinesis.StreamEncryption.KMS,
-            encryptionKey: datalakeBucketKeyAlias.aliasTargetKey
+            encryptionKey: datalakeBucketKey
         });
 
         // The code that defines your stack goes here
@@ -40,5 +40,6 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         // });
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
+        new cdk.CfnOutput(this, 'DataLakeBucket', { value: datalakeBucketKey.keyArn })
     }
 }
