@@ -174,7 +174,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                     logGroupName: firehouseLogGroup.logGroupName,
                     logStreamName: 'S3Delivery'
                 },
-                compressionFormat: 'ZIP',
+                compressionFormat: 'GZIP',
                 errorOutputPrefix: `error/${fixedS3Prefix}/${exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
                 prefix: `${fixedS3Prefix}/${exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
                 roleArn: firehoseDeliveryRole.roleArn
