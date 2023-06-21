@@ -32,7 +32,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             streamName: 'ddb-exclusive-stream',
             shardCount: 10,
             encryption: kinesis.StreamEncryption.KMS,
-            encryptionKey: datalakeBucketKey,
+            encryptionKey: datalakeBucketKey
         });
 
         const exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
@@ -116,7 +116,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                                 's3:PutObject',
                                 's3:ListObjects',
                                 's3:PutObjectAcl'
-                            ]
+                            ],
+                            resources: [`${datalakeBucket.bucketArn}/dynamodb/*`]
                         })
                     ]
                 }),
@@ -143,7 +144,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         const firehouseStreamName = 'ddb-table-firehose-delivery-stream';
         const firehouseLogGroup = new logs.LogGroup(this, 'FirehouseLogGroup', {
             logGroupName: `/aws/kinesisfirehose/${firehouseStreamName}`,
-            retention: logs.RetentionDays.THREE_MONTHS
+            retention: logs.RetentionDays.THREE_MONTHS,
+            removalPolicy: cdk.RemovalPolicy.DESTROY
         })
         new kinesisfirehouse.CfnDeliveryStream(this, 'DynamoDBFirehose', {
             deliveryStreamName: firehouseStreamName,
@@ -163,10 +165,26 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                     logGroupName: firehouseLogGroup.logGroupName,
                     logStreamName: 'S3Delivery'
                 },
-                compressionFormat: 'Snappy',
+                compressionFormat: 'UNCOMPRESSED',
                 errorOutputPrefix: `error/${exampleDdbTable.tableName}/`,
                 prefix: `dynamodb/aws21/${exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/}`,
-                roleArn: firehoseDeliveryRole.roleArn
+                roleArn: firehoseDeliveryRole.roleArn,
+                dataFormatConversionConfiguration: {
+                    enabled: true,
+                    inputFormatConfiguration: {
+                        deserializer: {
+                            openXJsonSerDe: {}
+                        }
+                    },
+                    outputFormatConfiguration: {
+                        serializer: {
+                            parquetSerDe: {
+                                compression: 'SNAPPY',
+                                writerVersion: 'V2'
+                            }
+                        }
+                    }
+                }
             }
         })
 
@@ -179,6 +197,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
         new cdk.CfnOutput(this, 'DataLakeBucketKeyArn', { value: datalakeBucketKey.keyArn });
-        new cdk.CfnOutput(this, 'DdbTableArn', { value: exampleDdbTable.tableArn, description: 'The ARN of the DynamoDB table' })
+        new cdk.CfnOutput(this, 'DdbTableArn', { value: exampleDdbTable.tableArn, description: 'The ARN of the DynamoDB table' });
+        new cdk.CfnOutput(this, 'FirehouseRoleArn', { value: firehoseDeliveryRole.roleArn, description: 'The ARN of the Firehose Delivery Role' });
+        new cdk.CfnOutput(this, 'FirehouseRoleId', { value: firehoseDeliveryRole.roleId, description: 'The ID of the Firehose Delivery Role' })
     }
 }
