@@ -99,7 +99,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                             actions: [
                                 's3:ListBucket',
                                 's3:ListBucketByTags',
-                                's3:GetBucketLocation'
+                                's3:GetBucketLocation',
+                                's3:ListBucketMultipartUploads'
                             ],
                             resources: [
                                 datalakeBucket.bucketArn
@@ -113,6 +114,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                         new iam.PolicyStatement({
                             effect: iam.Effect.ALLOW,
                             actions: [
+                                's3:GetObject',
+                                's3:AbortMultipartUpload',
                                 's3:PutObject',
                                 's3:ListObjects',
                                 's3:PutObjectAcl'
@@ -155,36 +158,25 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 roleArn: firehoseDeliveryRole.roleArn
             },
             extendedS3DestinationConfiguration: {
+                encryptionConfiguration: {
+                    kmsEncryptionConfig: {
+                        awskmsKeyArn: datalakeBucketKey.keyArn
+                    }
+                },
                 bucketArn: datalakeBucket.bucketArn,
                 bufferingHints: {
                     intervalInSeconds: 60,
-                    sizeInMBs: 64
+                    sizeInMBs: 16
                 },
                 cloudWatchLoggingOptions: {
                     enabled: true,
                     logGroupName: firehouseLogGroup.logGroupName,
                     logStreamName: 'S3Delivery'
                 },
-                compressionFormat: 'UNCOMPRESSED',
+                compressionFormat: 'ZIP',
                 errorOutputPrefix: `error/${exampleDdbTable.tableName}/`,
-                prefix: `dynamodb/aws21/${exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/}`,
-                roleArn: firehoseDeliveryRole.roleArn,
-                dataFormatConversionConfiguration: {
-                    enabled: true,
-                    inputFormatConfiguration: {
-                        deserializer: {
-                            openXJsonSerDe: {}
-                        }
-                    },
-                    outputFormatConfiguration: {
-                        serializer: {
-                            parquetSerDe: {
-                                compression: 'SNAPPY',
-                                writerVersion: 'V2'
-                            }
-                        }
-                    }
-                }
+                prefix: `dynamodb/aws21/${exampleDdbTable.tableName}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/!{timestamp:HH}/`,
+                roleArn: firehoseDeliveryRole.roleArn
             }
         })
 
