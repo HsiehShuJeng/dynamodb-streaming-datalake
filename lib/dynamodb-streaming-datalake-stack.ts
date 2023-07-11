@@ -12,7 +12,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
     datalakeBucketKeyAliasName: string,
-    createNewKmsKey4Kinesis: boolean
+    createNewKmsKey4Kinesis: boolean,
+    firehoseRoleName: string,
 }
 
 export class DynamodbStreamingDatalakeStack extends cdk.Stack {
@@ -65,7 +66,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         });
 
         const firehoseDeliveryRole = new iam.Role(this, 'FirehoseDeliveryRole', {
-            roleName: 'firehose-dbstream-role',
+            roleName: props.firehoseRoleName,
             assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
             description: 'Role for Firehose to deliver data to S3',
             inlinePolicies: {
