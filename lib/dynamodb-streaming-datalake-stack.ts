@@ -11,14 +11,25 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
-    datalakeBucketKeyAliasName: string
+    datalakeBucketKeyAliasName: string,
+    createNewKmsKey4Kinesis: boolean
 }
 
 export class DynamodbStreamingDatalakeStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: DynamodbStreamingDatalakeStackProps) {
         super(scope, id, props);
 
-        const fixedS3Prefix = 'dynamodb/aws21'
+        const fixedS3Prefix = 'dynamodb/aws21';
+        let kmsKey4Kinesis: kms.IKey;
+        if (props.createNewKmsKey4Kinesis) {
+            kmsKey4Kinesis = new kms.Key(this, 'KinesisKmsKey', {
+                alias: 'kinesis-exclusive-key',
+                description: 'KMS Key for the Kinesis family, i.e., Data Streams and Firehose'
+            });
+        }
+        else {
+            kmsKey4Kinesis = kms.Key.fromLookup(this, 'DataLakeKmsKey', { aliasName: props.datalakeBucketKeyAliasName })
+        }
         const datalakeBucketKey = kms.Key.fromLookup(this, 'DataLakeKmsKey', { aliasName: props.datalakeBucketKeyAliasName })
         const datalakeBucket = (props?.datalakeBucketName) ? s3.Bucket.fromBucketName(this, 'DatalakeBucket', props.datalakeBucketName) : new s3.Bucket(this, 'DatalakeBucket', {
             bucketName: `dynamodb-streaming-datalake-${cdk.Aws.ACCOUNT_ID}`,
@@ -33,7 +44,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             streamName: 'ddb-exclusive-stream',
             shardCount: 10,
             encryption: kinesis.StreamEncryption.KMS,
-            encryptionKey: datalakeBucketKey
+            encryptionKey: kmsKey4Kinesis
         });
 
         const exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
@@ -50,7 +61,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 type: dynamodb.AttributeType.STRING
             },
             encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-            encryptionKey: datalakeBucketKey
+            encryptionKey: kmsKey4Kinesis
         });
 
         const firehoseDeliveryRole = new iam.Role(this, 'FirehoseDeliveryRole', {
@@ -87,7 +98,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                                 'kms:DescribeKey'
                             ],
                             resources: [
-                                datalakeBucketKey.keyArn
+                                datalakeBucketKey.keyArn,
+                                kmsKey4Kinesis.keyArn
                             ]
                         })
                     ]
