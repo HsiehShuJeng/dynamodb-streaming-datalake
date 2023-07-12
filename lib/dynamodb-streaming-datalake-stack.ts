@@ -1,26 +1,30 @@
 import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as kinesis from 'aws-cdk-lib/aws-kinesis';
-import * as kms from 'aws-cdk-lib/aws-kms';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kinesis from 'aws-cdk-lib/aws-kinesis';
 import * as kinesisfirehouse from 'aws-cdk-lib/aws-kinesisfirehose';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as logs from 'aws-cdk-lib/aws-logs';
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
 
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
     datalakeBucketKeyAliasName: string,
     createNewKmsKey4Kinesis: boolean,
-    firehoseRoleName: string,
+    sameAccountFirehoseRoleName: string,
+    crossAccountFirehoseRoleName: string,
+    crossAccountAccountId: string,
+    crossAccountBucketName: string
 }
 
 export class DynamodbStreamingDatalakeStack extends cdk.Stack {
+    fixedS3Prefix: string;
+    exampleDdbTable: dynamodb.ITable;
     constructor(scope: Construct, id: string, props: DynamodbStreamingDatalakeStackProps) {
         super(scope, id, props);
 
-        const fixedS3Prefix = 'dynamodb/aws21';
+        this.fixedS3Prefix = 'dynamodb/aws21';
         let kmsKey4Kinesis: kms.IKey;
         if (props.createNewKmsKey4Kinesis) {
             kmsKey4Kinesis = new kms.Key(this, 'KinesisKmsKey', {
@@ -48,7 +52,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             encryptionKey: kmsKey4Kinesis
         });
 
-        const exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
+        this.exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
             tableName: 'example-ddb-table',
             kinesisStream: ddbStream,
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -66,7 +70,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         });
 
         const firehoseDeliveryRole = new iam.Role(this, 'FirehoseDeliveryRole', {
-            roleName: props.firehoseRoleName,
+            roleName: props.sameAccountFirehoseRoleName,
             assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
             description: 'Role for Firehose to deliver data to S3',
             inlinePolicies: {
@@ -153,7 +157,6 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                                 ddbStream.streamArn
                             ]
                         })
-
                     ]
                 })
             }
@@ -164,7 +167,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             retention: logs.RetentionDays.THREE_MONTHS,
             removalPolicy: cdk.RemovalPolicy.DESTROY
         })
-        new kinesisfirehouse.CfnDeliveryStream(this, 'DynamoDBFirehose', {
+        const sameAccountDeliveryStream = new kinesisfirehouse.CfnDeliveryStream(this, 'DynamoDBFirehose', {
             deliveryStreamName: firehouseStreamName,
             deliveryStreamType: 'KinesisStreamAsSource',
             kinesisStreamSourceConfiguration: {
@@ -188,17 +191,156 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                     logStreamName: 'S3Delivery'
                 },
                 compressionFormat: 'GZIP',
-                errorOutputPrefix: `error/${fixedS3Prefix}/${exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
-                prefix: `${fixedS3Prefix}/${exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
+                errorOutputPrefix: `error/${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
+                prefix: `${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
                 roleArn: firehoseDeliveryRole.roleArn
             }
-        })
+        });
+        sameAccountDeliveryStream.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+
+        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName);
 
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
+        new cdk.CfnOutput(this, 'SameAccountDeliveryStreamArn', { value: sameAccountDeliveryStream.attrArn, description: 'The ARN of the Firehose Delivery Stream for the same account' });
+        new cdk.CfnOutput(this, 'CrossAccountDeliveryStreamArn', { value: crossAccountFirehoseDeliveryStream.attrArn, description: 'The ARN of the Firehose Delivery Stream for the cross account' });
         new cdk.CfnOutput(this, 'DataLakeBucketKeyArn', { value: datalakeBucketKey.keyArn });
-        new cdk.CfnOutput(this, 'DdbTableArn', { value: exampleDdbTable.tableArn, description: 'The ARN of the DynamoDB table' });
+        new cdk.CfnOutput(this, 'DdbTableArn', { value: this.exampleDdbTable.tableArn, description: 'The ARN of the DynamoDB table' });
         new cdk.CfnOutput(this, 'FirehouseRoleArn', { value: firehoseDeliveryRole.roleArn, description: 'The ARN of the Firehose Delivery Role' });
         new cdk.CfnOutput(this, 'FirehouseRoleId', { value: firehoseDeliveryRole.roleId, description: 'The ID of the Firehose Delivery Role' })
+    }
+
+    private createCrossAccountFirehoseLogGroup = (firehouseCrossAccountStreamName: string): logs.ILogGroup => {
+        return new logs.LogGroup(this, 'FirehouseCrossAccountLogGroup', {
+            logGroupName: `/aws/kinesisfirehose/${firehouseCrossAccountStreamName}`,
+            retention: logs.RetentionDays.THREE_MONTHS,
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+    }
+
+    private createCrossAccountFirehoseRole = (crossAccountFirehoseRoleName: string, kmsKey4Kinesis: kms.IKey, ddbStream: kinesis.IStream, crossAccountAccountId: string, crossAccountBucketName: string): iam.Role => {
+        return new iam.Role(this, 'CrossAccountFirehoseRole', {
+            roleName: crossAccountFirehoseRoleName,
+            assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
+            description: 'A role for Firehose to deliver data to S3 for another AWS account.',
+            inlinePolicies: {
+                ['AllowLogging']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'logs:CreateLogGroup',
+                                'logs:CreateLogStream',
+                                'logs:PutLogEvents'
+                            ],
+                            resources: [
+                                `arn:${cdk.Aws.PARTITION}:logs:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:log-group:/aws/kinesisfirehose/*:*`
+                            ]
+                        })
+                    ]
+                }),
+                ['KmsPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'kms:Encrypt',
+                                'kms:Decrypt',
+                                'kms:ReEncrypt',
+                                'kms:GenerateDataKey*',
+                                'kms:DescribeKey'
+                            ],
+                            resources: [
+                                kmsKey4Kinesis.keyArn,
+                                `arn:${cdk.Aws.PARTITION}:kms:${cdk.Aws.REGION}:${crossAccountAccountId}:key/*`
+                            ]
+                        })
+                    ]
+                }),
+                ['S3BucketPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                's3:ListBucket',
+                                's3:ListBucketByTags',
+                                's3:GetBucketLocation',
+                                's3:ListBucketMultipartUploads'
+                            ],
+                            resources: [
+                                `arn:${cdk.Aws.PARTITION}:s3:::${crossAccountBucketName}`
+                            ]
+                        })
+                    ]
+                }),
+                ['S3ObjectPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                's3:GetObject',
+                                's3:AbortMultipartUpload',
+                                's3:PutObject',
+                                's3:ListObjects',
+                                's3:PutObjectAcl'
+                            ],
+                            resources: [`arn:${cdk.Aws.PARTITION}:s3:::${crossAccountBucketName}/dynamodb/*`]
+                        })
+                    ]
+                }),
+                ['KinesisPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'kinesis:DescribeStream',
+                                'kinesis:GetShardIterator',
+                                'kinesis:GetRecords',
+                                'kinesis:ListShards'
+                            ],
+                            resources: [
+                                ddbStream.streamArn
+                            ]
+                        })
+
+                    ]
+                })
+            }
+        })
+    }
+
+    private createCrossAccountFirehoseDeliveryStream = (ddbStream: kinesis.IStream, kmsKey4Kinesis: kms.IKey, crossAccountFirehoseRoleName: string, crossAccountAccountId: string, crossAccountBucketName: string): kinesisfirehouse.CfnDeliveryStream => {
+        const firehouseCrossAccountStreamName = 'ddb-table-firehose-cross-account-delivery-stream';
+        const firehouseCrossAccountLogGroup = this.createCrossAccountFirehoseLogGroup(firehouseCrossAccountStreamName);
+        const crossAccountFirehoseRole = this.createCrossAccountFirehoseRole(crossAccountFirehoseRoleName, kmsKey4Kinesis, ddbStream, crossAccountAccountId, crossAccountBucketName);
+        return new kinesisfirehouse.CfnDeliveryStream(this, 'DynamoDBCrossAccountFirehose', {
+            deliveryStreamName: firehouseCrossAccountStreamName,
+            deliveryStreamType: 'KinesisStreamAsSource',
+            kinesisStreamSourceConfiguration: {
+                kinesisStreamArn: ddbStream.streamArn,
+                roleArn: crossAccountFirehoseRole.roleArn
+            },
+            extendedS3DestinationConfiguration: {
+                bucketArn: `arn:${cdk.Aws.PARTITION}:s3:::${crossAccountBucketName}`,
+                bufferingHints: {
+                    intervalInSeconds: 60,
+                    sizeInMBs: 16
+                },
+                cloudWatchLoggingOptions: {
+                    enabled: true,
+                    logGroupName: firehouseCrossAccountLogGroup.logGroupName,
+                    logStreamName: 'S3Delivery'
+                },
+                compressionFormat: 'GZIP',
+                errorOutputPrefix: `error/${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
+                prefix: `${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
+                roleArn: crossAccountFirehoseRole.roleArn
+            }
+        });
     }
 }

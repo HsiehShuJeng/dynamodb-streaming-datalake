@@ -64,8 +64,11 @@ If your deployment is successful, you should be able to see similar result as th
 3. Consumer requirements
    * Producer's account ID
    * Producer's Firehose IAM role name  
-
-4. Remember to execute `cdk bootstrap` for the first time to deploy the CDK toolkit stack into your AWS account.  
+4. Producer requirements
+    * Consumer's account ID
+    * Consumer's datalake bucket name
+    * Consumer's KMS key ARN of the datalake bucket
+5. Remember to execute `cdk bootstrap` for the first time to deploy the CDK toolkit stack into your AWS account.  
 ```bash
 # single account
 AWS_PROFILE_NAME="YOUR PROFILE NAME"

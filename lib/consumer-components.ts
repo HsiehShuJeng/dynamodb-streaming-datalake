@@ -7,6 +7,7 @@ import { Construct } from 'constructs';
 interface ConsumerStackProps extends cdk.StackProps {
     readonly producerAccountId: string;
     readonly producerFirehoseRoleName: string;
+    readonly datalakeBucketName: string;
 }
 
 export class ConsumerStack extends cdk.Stack {
@@ -30,7 +31,7 @@ export class ConsumerStack extends cdk.Stack {
             }
         }));
         const demoBucket = new s3.Bucket(this, 'ConsumerBucket', {
-            bucketName: `dynamodb-streaming-datalake-${cdk.Aws.ACCOUNT_ID}`,
+            bucketName: props.datalakeBucketName,
             blockPublicAccess: {
                 blockPublicAcls: true,
                 blockPublicPolicy: true,
