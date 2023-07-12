@@ -4,9 +4,11 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kinesis from 'aws-cdk-lib/aws-kinesis';
 import * as kinesisfirehouse from 'aws-cdk-lib/aws-kinesisfirehose';
 import * as kms from 'aws-cdk-lib/aws-kms';
+import { IFunction } from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
+import { JsonProcessor } from './processing-lambda';
 
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
@@ -197,8 +199,9 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             }
         });
         sameAccountDeliveryStream.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+        const jsonProcessor = new JsonProcessor(this, 'JsonProcessor', { kmsKinesisKeyArn: kmsKey4Kinesis.keyArn });
 
-        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName);
+        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, jsonProcessor.lambdaEntity);
 
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
@@ -314,7 +317,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         })
     }
 
-    private createCrossAccountFirehoseDeliveryStream = (ddbStream: kinesis.IStream, kmsKey4Kinesis: kms.IKey, crossAccountFirehoseRoleName: string, crossAccountAccountId: string, crossAccountBucketName: string): kinesisfirehouse.CfnDeliveryStream => {
+    private createCrossAccountFirehoseDeliveryStream = (ddbStream: kinesis.IStream, kmsKey4Kinesis: kms.IKey, crossAccountFirehoseRoleName: string, crossAccountAccountId: string, crossAccountBucketName: string, jsonProcessor: IFunction): kinesisfirehouse.CfnDeliveryStream => {
         const firehouseCrossAccountStreamName = 'ddb-table-firehose-cross-account-delivery-stream';
         const firehouseCrossAccountLogGroup = this.createCrossAccountFirehoseLogGroup(firehouseCrossAccountStreamName);
         const crossAccountFirehoseRole = this.createCrossAccountFirehoseRole(crossAccountFirehoseRoleName, kmsKey4Kinesis, ddbStream, crossAccountAccountId, crossAccountBucketName);
@@ -339,7 +342,29 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 compressionFormat: 'GZIP',
                 errorOutputPrefix: `error/${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
                 prefix: `${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
-                roleArn: crossAccountFirehoseRole.roleArn
+                roleArn: crossAccountFirehoseRole.roleArn,
+                processingConfiguration: {
+                    enabled: true,
+                    processors: [{
+                        type: 'Lambda',
+                        parameters: [{
+                            parameterName: 'LambdaArn',
+                            parameterValue: jsonProcessor.functionArn
+                        },
+                        {
+                            parameterName: 'NumberOfRetries',
+                            parameterValue: '2'
+                        },
+                        {
+                            parameterName: 'BufferSizeInMBs',
+                            parameterValue: '3'
+                        },
+                        {
+                            parameterName: 'BufferIntervalInSeconds',
+                            parameterValue: '60'
+                        }]
+                    }]
+                }
             }
         });
     }
