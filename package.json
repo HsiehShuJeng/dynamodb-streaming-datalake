@@ -20,6 +20,8 @@
     "typescript": "~5.0.4"
   },
   "dependencies": {
+    "@aws-sdk/client-sts": "^3.369.0",
+    "@aws-sdk/credential-provider-ini": "^3.369.0",
     "aws-cdk-lib": "2.83.1",
     "constructs": "^10.0.0",
     "source-map-support": "^0.5.21"
