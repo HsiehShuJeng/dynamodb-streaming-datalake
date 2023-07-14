@@ -21,7 +21,9 @@ const sts = new STSClient({
 getAccountId().then(consumerAccountId => {
     console.log(`Producer Account ID: ${process.env.CDK_DEFAULT_ACCOUNT}`)
     console.log(`Consumer Account ID: ${consumerAccountId}`)
-    const crossAccountBucketName: string = `dynamodb-streaming-datalake-${consumerAccountId}`
+    const crossAccountBucketName: string = `dynamodb-streaming-datalake-${consumerAccountId}`;
+    const producerDdbReadRoleName: string = 'dynamodb-cross-account-read-role';
+    const producerDdbTableName: string = 'example-ddb-table';
     new DynamodbStreamingDatalakeStack(producerApp, 'DynamodbStreamingDatalakeStack', {
         /* If you don't specify 'env', this stack will be environment-agnostic.
          * Account/Region-dependent features and context lookups will not work,
@@ -39,6 +41,8 @@ getAccountId().then(consumerAccountId => {
         datalakeBucketKeyAliasName: 'alias/DataLake',
         createNewKmsKey4Kinesis: true,
         sameAccountFirehoseRoleName: sameAccountFirehoseRoleName,
+        sameAccountDdbReadRoleName: producerDdbReadRoleName,
+        sameAccountDdbTableName: producerDdbTableName,
         crossAccountFirehoseRoleName: crossAccountFirehoseRoleName,
         crossAccountAccountId: consumerAccountId!,
         crossAccountBucketName: crossAccountBucketName,
@@ -49,7 +53,9 @@ getAccountId().then(consumerAccountId => {
         env: { account: consumerAccountId, region: 'ap-northeast-1' },
         producerAccountId: process.env.CDK_DEFAULT_ACCOUNT!,
         producerFirehoseRoleName: crossAccountFirehoseRoleName,
-        datalakeBucketName: crossAccountBucketName
+        datalakeBucketName: crossAccountBucketName,
+        producerDdbReadRoleName: producerDdbReadRoleName,
+        producerDdbTableName: producerDdbTableName
     });
     producerApp.synth()
     consumerApp.synth()

@@ -15,7 +15,9 @@ interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
     datalakeBucketKeyAliasName: string,
     createNewKmsKey4Kinesis: boolean,
+    sameAccountDdbTableName: string
     sameAccountFirehoseRoleName: string,
+    sameAccountDdbReadRoleName: string,
     crossAccountFirehoseRoleName: string,
     crossAccountAccountId: string,
     crossAccountBucketName: string,
@@ -58,7 +60,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         const jsonProcessor = new JsonProcessor(this, 'JsonProcessor', { kmsKinesisKeyArn: kmsKey4Kinesis.keyArn });
 
         this.exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
-            tableName: 'example-ddb-table',
+            tableName: props.sameAccountDdbTableName,
             kinesisStream: ddbStream,
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             pointInTimeRecovery: true,
@@ -71,7 +73,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 type: dynamodb.AttributeType.STRING
             },
             encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-            encryptionKey: kmsKey4Kinesis
+            encryptionKey: kmsKey4Kinesis,
         });
 
         const firehoseDeliveryRole = new iam.Role(this, 'FirehoseDeliveryRole', {
@@ -241,6 +243,15 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         sameAccountDeliveryStream.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
         const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(jsonProcessor.lambdaEntity, ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, props.crossAccountBucketKeyId);
+        const ddbReadIamRole = new iam.Role(this, 'DdbCrossAccount4Glue', {
+            roleName: props.sameAccountDdbReadRoleName,
+            assumedBy: new iam.ServicePrincipal('dynamodb.amazonaws.com'),
+            managedPolicies: [
+                iam.ManagedPolicy.fromAwsManagedPolicyName(
+                    'AmazonDynamoDBReadOnlyAccess'
+                )
+            ],
+        });
 
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
@@ -249,7 +260,8 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         new cdk.CfnOutput(this, 'DataLakeBucketKeyArn', { value: datalakeBucketKey.keyArn });
         new cdk.CfnOutput(this, 'DdbTableArn', { value: this.exampleDdbTable.tableArn, description: 'The ARN of the DynamoDB table' });
         new cdk.CfnOutput(this, 'FirehouseRoleArn', { value: firehoseDeliveryRole.roleArn, description: 'The ARN of the Firehose Delivery Role' });
-        new cdk.CfnOutput(this, 'FirehouseRoleId', { value: firehoseDeliveryRole.roleId, description: 'The ID of the Firehose Delivery Role' })
+        new cdk.CfnOutput(this, 'FirehouseRoleId', { value: firehoseDeliveryRole.roleId, description: 'The ID of the Firehose Delivery Role' });
+        new cdk.CfnOutput(this, 'DdbCrossAccountRoleArn', { value: ddbReadIamRole.roleArn, description: 'The ARN of the DynamoDB read role for the cross account' });
     }
 
     private createCrossAccountFirehoseLogGroup = (firehouseCrossAccountStreamName: string): logs.ILogGroup => {
