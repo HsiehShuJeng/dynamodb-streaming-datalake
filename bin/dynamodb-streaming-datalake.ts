@@ -41,7 +41,8 @@ getAccountId().then(consumerAccountId => {
         sameAccountFirehoseRoleName: sameAccountFirehoseRoleName,
         crossAccountFirehoseRoleName: crossAccountFirehoseRoleName,
         crossAccountAccountId: consumerAccountId!,
-        crossAccountBucketName: crossAccountBucketName
+        crossAccountBucketName: crossAccountBucketName,
+        crossAccountBucketKeyId: '6a7083d5-cac9-421e-b0a4-3373805c63d7'
         /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
     });
     new ConsumerStack(consumerApp, 'ConsumerStack', {

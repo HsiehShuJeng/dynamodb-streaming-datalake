@@ -52,7 +52,19 @@ export class ConsumerStack extends cdk.Stack {
             principals: [new iam.AccountPrincipal(props.producerAccountId)]
         }));
 
+        const ddbReadIamRole = new iam.Role(this, 'DdbCrossAccount4Glue', {
+            roleName: 'dynamodb-cross-account-read-role',
+            assumedBy: new iam.ServicePrincipal('dynamodb.amazonaws.com'),
+            managedPolicies: [
+                iam.ManagedPolicy.fromAwsManagedPolicyName(
+                    'AmazonDynamoDBReadOnlyAccess'
+                )
+            ],
+        })
+
+
         new cdk.CfnOutput(this, 'ConsumerBucketArn', { value: demoBucket.bucketArn, description: 'The ARN of the consumer bucket' });
-        new cdk.CfnOutput(this, 'ConsumerKmsKeyArn', { value: demoBucketKms.keyArn, description: 'The ARN of the consumer bucket KMS key' });
+        new cdk.CfnOutput(this, 'ConsumerBucketKmsKeyArn', { value: demoBucketKms.keyArn, description: 'The ARN of the consumer bucket KMS key' });
+        new cdk.CfnOutput(this, 'DdbReadIamRoleArn', { value: ddbReadIamRole.roleArn, description: 'The ARN of the IAM role that allows Glue to read from DynamoDB' });
     }
 }

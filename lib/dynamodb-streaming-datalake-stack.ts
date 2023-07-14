@@ -9,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { JsonProcessor } from './processing-lambda';
+import { json } from 'stream/consumers';
 
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
@@ -17,7 +18,8 @@ interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     sameAccountFirehoseRoleName: string,
     crossAccountFirehoseRoleName: string,
     crossAccountAccountId: string,
-    crossAccountBucketName: string
+    crossAccountBucketName: string,
+    crossAccountBucketKeyId: string
 }
 
 export class DynamodbStreamingDatalakeStack extends cdk.Stack {
@@ -53,6 +55,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             encryption: kinesis.StreamEncryption.KMS,
             encryptionKey: kmsKey4Kinesis
         });
+        const jsonProcessor = new JsonProcessor(this, 'JsonProcessor', { kmsKinesisKeyArn: kmsKey4Kinesis.keyArn });
 
         this.exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
             tableName: 'example-ddb-table',
@@ -160,7 +163,22 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                             ]
                         })
                     ]
-                })
+                }),
+                ['LambdaPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'lambda:InvokeFunction',
+                                'lambda:GetFunctionConfiguration'
+                            ],
+                            resources: [
+                                jsonProcessor.lambdaEntity.functionArn
+                            ]
+                        })
+                    ]
+                }),
             }
         });
         const firehouseStreamName = 'ddb-table-firehose-delivery-stream';
@@ -195,13 +213,34 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 compressionFormat: 'GZIP',
                 errorOutputPrefix: `error/${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/result=!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/HH}/`,
                 prefix: `${this.fixedS3Prefix}/${this.exampleDdbTable.tableName}/!{timestamp:yyyy/MM/dd/HH}/`,
-                roleArn: firehoseDeliveryRole.roleArn
+                roleArn: firehoseDeliveryRole.roleArn,
+                processingConfiguration: {
+                    enabled: true,
+                    processors: [{
+                        type: 'Lambda',
+                        parameters: [{
+                            parameterName: 'LambdaArn',
+                            parameterValue: jsonProcessor.lambdaEntity.functionArn
+                        },
+                        {
+                            parameterName: 'NumberOfRetries',
+                            parameterValue: '2'
+                        },
+                        {
+                            parameterName: 'BufferSizeInMBs',
+                            parameterValue: '3'
+                        },
+                        {
+                            parameterName: 'BufferIntervalInSeconds',
+                            parameterValue: '60'
+                        }]
+                    }]
+                }
             }
         });
         sameAccountDeliveryStream.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
-        const jsonProcessor = new JsonProcessor(this, 'JsonProcessor', { kmsKinesisKeyArn: kmsKey4Kinesis.keyArn });
 
-        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, jsonProcessor.lambdaEntity);
+        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(jsonProcessor.lambdaEntity, ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, props.crossAccountBucketKeyId);
 
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });
         new cdk.CfnOutput(this, 'DdbStreamArn', { value: ddbStream.streamArn, description: 'The ARN of the Kinesis Stream for DynamoDB' });
@@ -221,7 +260,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         });
     }
 
-    private createCrossAccountFirehoseRole = (crossAccountFirehoseRoleName: string, kmsKey4Kinesis: kms.IKey, ddbStream: kinesis.IStream, crossAccountAccountId: string, crossAccountBucketName: string): iam.Role => {
+    private createCrossAccountFirehoseRole = (jsonProcessor: IFunction, crossAccountFirehoseRoleName: string, kmsKey4Kinesis: kms.IKey, ddbStream: kinesis.IStream, crossAccountAccountId: string, crossAccountBucketName: string): iam.Role => {
         return new iam.Role(this, 'CrossAccountFirehoseRole', {
             roleName: crossAccountFirehoseRoleName,
             assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
@@ -312,15 +351,30 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                         })
 
                     ]
-                })
+                }),
+                ['LambdaPermissions']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'lambda:InvokeFunction',
+                                'lambda:GetFunctionConfiguration'
+                            ],
+                            resources: [
+                                jsonProcessor.functionArn
+                            ]
+                        })
+                    ]
+                }),
             }
         })
     }
 
-    private createCrossAccountFirehoseDeliveryStream = (ddbStream: kinesis.IStream, kmsKey4Kinesis: kms.IKey, crossAccountFirehoseRoleName: string, crossAccountAccountId: string, crossAccountBucketName: string, jsonProcessor: IFunction): kinesisfirehouse.CfnDeliveryStream => {
+    private createCrossAccountFirehoseDeliveryStream = (jsonProcessor: IFunction, ddbStream: kinesis.IStream, kmsKey4Kinesis: kms.IKey, crossAccountFirehoseRoleName: string, crossAccountAccountId: string, crossAccountBucketName: string, crossAccountBucketKmsKeyId: string): kinesisfirehouse.CfnDeliveryStream => {
         const firehouseCrossAccountStreamName = 'ddb-table-firehose-cross-account-delivery-stream';
         const firehouseCrossAccountLogGroup = this.createCrossAccountFirehoseLogGroup(firehouseCrossAccountStreamName);
-        const crossAccountFirehoseRole = this.createCrossAccountFirehoseRole(crossAccountFirehoseRoleName, kmsKey4Kinesis, ddbStream, crossAccountAccountId, crossAccountBucketName);
+        const crossAccountFirehoseRole = this.createCrossAccountFirehoseRole(jsonProcessor, crossAccountFirehoseRoleName, kmsKey4Kinesis, ddbStream, crossAccountAccountId, crossAccountBucketName);
         return new kinesisfirehouse.CfnDeliveryStream(this, 'DynamoDBCrossAccountFirehose', {
             deliveryStreamName: firehouseCrossAccountStreamName,
             deliveryStreamType: 'KinesisStreamAsSource',
@@ -333,6 +387,11 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
                 bufferingHints: {
                     intervalInSeconds: 60,
                     sizeInMBs: 16
+                },
+                encryptionConfiguration: {
+                    kmsEncryptionConfig: {
+                        awskmsKeyArn: `arn:aws:kms:${cdk.Aws.REGION}:${crossAccountAccountId}:key/${crossAccountBucketKmsKeyId}`
+                    }
                 },
                 cloudWatchLoggingOptions: {
                     enabled: true,
