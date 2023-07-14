@@ -63,11 +63,12 @@ If your deployment is successful, you should be able to see similar result as th
 2. In the cross-account scenarios, the IAM role of the Kinesis Firehose delivery stream, the KMS policy of the AWS KMS key used by the data lake bucket on Amazon S3, and the bucket policy of the data lake bucket need to be taken care specifically.
 3. Consumer requirements
    * Producer's account ID
-   * Producer's Firehose IAM role name  
+   * Producer's Firehose IAM role name
+   * Producer's role ID of the Firehose IAM role
 4. Producer requirements
     * Consumer's account ID
     * Consumer's datalake bucket name
-    * Consumer's KMS key ARN of the datalake bucket
+    * Consumer's KMS key ARN for SSE of the datalake bucket
 5. Remember to execute `cdk bootstrap` for the first time to deploy the CDK toolkit stack into your AWS account.  
 ```bash
 # single account
