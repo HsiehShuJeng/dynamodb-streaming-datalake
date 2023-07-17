@@ -3,14 +3,17 @@ import * as glue from 'aws-cdk-lib/aws-glue';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
+import * as path from 'path';
 
 interface ConsumerStackProps extends cdk.StackProps {
+    readonly datalakeBucketName: string;
     readonly producerAccountId: string;
     readonly producerFirehoseRoleName: string;
-    readonly datalakeBucketName: string;
     readonly producerDdbReadRoleName: string;
     readonly producerDdbTableName: string;
+    readonly producerGlueJobRoleName: string;
 }
 
 export class ConsumerStack extends cdk.Stack {
@@ -57,20 +60,30 @@ export class ConsumerStack extends cdk.Stack {
             },
             principals: [new iam.AccountPrincipal(producerAccountId)]
         }));
-        const ddbGlueJobRole = this.createGlueJobRole(props.producerDdbReadRoleName, producerAccountId, demoBucket);
-        const glueJob = this.createGlueJob(ddbGlueJobRole, props.producerDdbTableName, producerAccountId, props.producerDdbReadRoleName, demoBucket);
+        const scriptLocation: ScriptLocation = { bucket: demoBucket, scriptPrefix: 'glue_jobs/ddb' };
+        const ddbGlueJobRole = this.createGlueJobRole(props.producerDdbReadRoleName, producerAccountId, demoBucket, props.producerGlueJobRoleName, scriptLocation);
+        const glueJob = this.createGlueJob(scriptLocation, ddbGlueJobRole, props.producerDdbTableName, producerAccountId, props.producerDdbReadRoleName, demoBucket);
 
 
         new cdk.CfnOutput(this, 'ConsumerBucketArn', { value: demoBucket.bucketArn, description: 'The ARN of the consumer bucket' });
         new cdk.CfnOutput(this, 'ConsumerBucketKmsKeyArn', { value: demoBucketKms.keyArn, description: 'The ARN of the consumer bucket KMS key' });
         new cdk.CfnOutput(this, 'DdbGlueJobRoleArn', { value: ddbGlueJobRole.roleArn, description: 'The ARN of the Glue job role' });
         new cdk.CfnOutput(this, 'DdbGlueJobRoleId', { value: ddbGlueJobRole.roleId, description: 'The role ID of the Glue job role' });
+        new cdk.CfnOutput(this, 'DdbGlueJobArn', { value: `arn:aws:glue:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:job/${glueJob.ref}`, description: 'The ARN of the Glue job' });
     }
 
-    private createGlueJob = (glueJobRole: iam.IRole, producerDdbTableName: string, producerAccountId: string, producerDdbReadRoleName: string, dataLakeBucket: s3.IBucket): glue.CfnJob => {
+    private createGlueJob = (scriptLocation: ScriptLocation, glueJobRole: iam.IRole, producerDdbTableName: string, producerAccountId: string, producerDdbReadRoleName: string, dataLakeBucket: s3.IBucket): glue.CfnJob => {
         const workType = 'Standard';
         const numWorkers = 1;
-        return new glue.CfnJob(this, 'DdbGlueJob', {
+        const scriptBucket = scriptLocation.bucket;
+        const scriptPrefix = scriptLocation.scriptPrefix;
+        const scriptName = 'ddb_full_load.py';
+        const deployScript = new s3deploy.BucketDeployment(this, ' DeployGlueScript', {
+            sources: [s3deploy.Source.asset(path.join(__dirname, 'glue_jobs'))],
+            destinationBucket: scriptBucket,
+            destinationKeyPrefix: scriptPrefix
+        });
+        const glueJob = new glue.CfnJob(this, 'DdbGlueJob', {
             role: glueJobRole.roleArn,
             workerType: workType,
             glueVersion: '4.0',
@@ -89,17 +102,19 @@ export class ConsumerStack extends cdk.Stack {
             command: {
                 name: 'glueetl',
                 pythonVersion: '3',
-                scriptLocation: 'glue_jobs/ddb_full_load.py'
+                scriptLocation: `s3://${scriptBucket.bucketName}/${scriptPrefix}/${scriptName}`
             },
             executionProperty: {
                 maxConcurrentRuns: 1
             }
-        })
+        });
+        deployScript.node.addDependency(glueJob);
+        return glueJob;
     }
 
-    private createGlueJobRole = (producerDdbReadRoleName: string, producerAccountId: string, dataLakeBucket: s3.IBucket): iam.Role => {
+    private createGlueJobRole = (producerDdbReadRoleName: string, producerAccountId: string, dataLakeBucket: s3.IBucket, glueJobRoleName: string, scriptLocation: ScriptLocation): iam.Role => {
         return new iam.Role(this, 'GlueJobRole', {
-            roleName: 'ddb-cross-account-full-load-glue-job-role',
+            roleName: glueJobRoleName,
             description: 'An IAM role to allow the Glue job to read from DynamoDB cross account and write to S3.',
             assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
             managedPolicies: [
@@ -112,7 +127,8 @@ export class ConsumerStack extends cdk.Stack {
                         new iam.PolicyStatement({
                             effect: iam.Effect.ALLOW,
                             actions: ['sts:AssumeRole'],
-                            resources: [`arn:aws:iam::${producerAccountId}:role/${producerDdbReadRoleName}`]
+                            resources: [
+                                `arn:aws:iam::${producerAccountId}:role/${producerDdbReadRoleName}`]
                         })
                     ]
                 }),
@@ -127,6 +143,7 @@ export class ConsumerStack extends cdk.Stack {
                             's3:GetObject'
                         ],
                         resources: [
+                            `${scriptLocation.bucket.bucketArn}/${scriptLocation.scriptPrefix}/*`,
                             `${dataLakeBucket.bucketArn}/${this.fixedS3Prefix}/*`,
                         ]
                     })]
@@ -152,4 +169,10 @@ export class ConsumerStack extends cdk.Stack {
             }
         })
     }
+}
+
+
+interface ScriptLocation {
+    bucket: s3.IBucket,
+    scriptPrefix: string,
 }

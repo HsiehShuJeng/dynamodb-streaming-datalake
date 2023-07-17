@@ -9,7 +9,6 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { JsonProcessor } from './processing-lambda';
-import { json } from 'stream/consumers';
 
 interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
@@ -18,6 +17,7 @@ interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     sameAccountDdbTableName: string
     sameAccountFirehoseRoleName: string,
     sameAccountDdbReadRoleName: string,
+    crossAccountGlueJobRoleName: string,
     crossAccountFirehoseRoleName: string,
     crossAccountAccountId: string,
     crossAccountBucketName: string,
@@ -245,12 +245,32 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(jsonProcessor.lambdaEntity, ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, props.crossAccountBucketKeyId);
         const ddbReadIamRole = new iam.Role(this, 'DdbCrossAccount4Glue', {
             roleName: props.sameAccountDdbReadRoleName,
-            assumedBy: new iam.ServicePrincipal('dynamodb.amazonaws.com'),
+            assumedBy: new iam.ArnPrincipal(`arn:aws:iam::${props.crossAccountAccountId}:role/${props.crossAccountGlueJobRoleName}`),
             managedPolicies: [
                 iam.ManagedPolicy.fromAwsManagedPolicyName(
                     'AmazonDynamoDBReadOnlyAccess'
                 )
             ],
+            inlinePolicies: {
+                ['DdbKmsPermission']: new iam.PolicyDocument({
+                    assignSids: true,
+                    statements: [
+                        new iam.PolicyStatement({
+                            effect: iam.Effect.ALLOW,
+                            actions: [
+                                'kms:Encrypt',
+                                'kms:Decrypt',
+                                'kms:ReEncrypt',
+                                'kms:GenerateDataKey*',
+                                'kms:DescribeKey'
+                            ],
+                            resources: [
+                                kmsKey4Kinesis.keyArn
+                            ]
+                        })
+                    ]
+                })
+            }
         });
 
         new cdk.CfnOutput(this, 'DatalakeBucketArn', { value: datalakeBucket.bucketArn, description: 'Datalake Bucket ARN' });

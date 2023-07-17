@@ -24,6 +24,7 @@ getAccountId().then(consumerAccountId => {
     const crossAccountBucketName: string = `dynamodb-streaming-datalake-${consumerAccountId}`;
     const producerDdbReadRoleName: string = 'dynamodb-cross-account-read-role';
     const producerDdbTableName: string = 'example-ddb-table';
+    const glueJobRoleName: string = 'ddb-cross-account-full-load-glue-job-role';
     new DynamodbStreamingDatalakeStack(producerApp, 'DynamodbStreamingDatalakeStack', {
         /* If you don't specify 'env', this stack will be environment-agnostic.
          * Account/Region-dependent features and context lookups will not work,
@@ -43,6 +44,7 @@ getAccountId().then(consumerAccountId => {
         sameAccountFirehoseRoleName: sameAccountFirehoseRoleName,
         sameAccountDdbReadRoleName: producerDdbReadRoleName,
         sameAccountDdbTableName: producerDdbTableName,
+        crossAccountGlueJobRoleName: glueJobRoleName,
         crossAccountFirehoseRoleName: crossAccountFirehoseRoleName,
         crossAccountAccountId: consumerAccountId!,
         crossAccountBucketName: crossAccountBucketName,
@@ -55,7 +57,8 @@ getAccountId().then(consumerAccountId => {
         producerFirehoseRoleName: crossAccountFirehoseRoleName,
         datalakeBucketName: crossAccountBucketName,
         producerDdbReadRoleName: producerDdbReadRoleName,
-        producerDdbTableName: producerDdbTableName
+        producerDdbTableName: producerDdbTableName,
+        producerGlueJobRoleName: glueJobRoleName,
     });
     producerApp.synth()
     consumerApp.synth()

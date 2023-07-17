@@ -1,6 +1,7 @@
 import multiprocessing
 import sys
 
+import boto3
 from awsglue.context import GlueContext
 from awsglue.dynamicframe import DynamicFrame
 from awsglue.job import Job
@@ -69,14 +70,15 @@ df = dyf.toDF().repartition(num_output_partitions)
 dyf = DynamicFrame.fromDF(df, glue_context, "dyf")
 
 # Writing the dynamic frame to S3 in Parquet format
+s3_path = f"s3://{s3_bucket_name}/{s3_fixed_prefix}/full_load"
+glue_context.purge_s3_path(s3_path, {"retentionPeriod": 0})
 glue_context.write_dynamic_frame.from_options(
     frame=dyf,
     connection_type="s3",
     connection_options={
-        "path": f"s3://{s3_bucket_name}/{s3_fixed_prefix}/full_load",
+        "path": s3_path,
     },
     format="parquet",
-    format_options={"writeBehavior": "overwrite"},
 )
 
 job.commit()

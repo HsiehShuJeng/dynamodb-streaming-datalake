@@ -84,3 +84,7 @@ ACCOUNT_ID="Consumer's Account ID"
 AWS_REGION="Consumer's Deployment Region"
 cdk bootstrap --trust ${TRUSTED_ACCOUNT_ID} --profile ${AWS_PROFILE_NAME} --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess aws://${ACCOUNT_ID}/${AWS_REGION}
 ```
+6. Misleading error message
+   ```bash
+   An error occurred while calling o80.showString. User: arn:aws:sts::${ConsumerAccountId}:assumed-role/ddb-cross-account-full-load-glue-job-role/GlueJobRunnerSession is not authorized to perform: dynamodb:DescribeTable on resource: arn:aws:dynamodb:ap-northeast-1:${ConsumerAccountId}:table/example-ddb-table because no identity-based policy allows the dynamodb:DescribeTable action (Service: AmazonDynamoDBv2; Status Code: 400; Error Code: AccessDeniedException; Request ID: N5ACV5ES40I4OSKCFQO9KJ8NP3VV4KQNSO5AEMVJF66Q9ASUAAJG; Proxy: null)
+   ```
