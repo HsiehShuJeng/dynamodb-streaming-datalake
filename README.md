@@ -60,6 +60,16 @@ If your deployment is successful, you should be able to see similar result as th
 
 ## Cross Account
 **Full Load**  
+   * Prerequisites for the **producer**
+        * An IAM role which can read the DDB table, which you can consider [`AmazonDynamoDBReadOnlyAccess`](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_dynamodb_specific-table.html) for the quickest launch.
+          > *Remember to grant KMS permissions if the DDB table is encrypted with AWS KMS at rest*.
+        * [PITR](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery_Howitworks.html) enabled for the DDB table
+   * Required information for the **producer**
+        * Consumer's role ARN of the Glue Job.
+   * Required information for the **consumer**
+        * Producer's role ARN of the IAM role which at least can read the DDB table
+        
+**CDC**
    * Required information for the **producer**
         * Consumer's account ID
         * Consumer's datalake bucket name
@@ -69,16 +79,6 @@ If your deployment is successful, you should be able to see similar result as th
         * Producer's Firehose IAM role name
         * Producer's role ID of the Firehose IAM role
             > *If the data lake bucket in the consumer account has a stricter bucket policy*.
-
-**CDC**
-   * Prerequisites for the **producer**
-        * An IAM role which can read the DDB table, which you can consider [`AmazonDynamoDBReadOnlyAccess`](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_dynamodb_specific-table.html) for the quickest launch.
-          > *Remember to grant KMS permissions if the DDB table is encrypted with AWS KMS at rest*.
-        * [PITR](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery_Howitworks.html) enabled for the DDB table
-   * Required information for the **producer**
-        * Consumer's role ARN of the Glue Job.
-   * Required information for the **consumer**
-        * Producer's role ARN of the IAM role which at least can read the DDB table
 
 ## Notes
 1. In this quick demo, the data encryption at rest for Amazon Kinesis Data Stream, Amazon Kinesis Firehose and Amazon S3 are all using the same AWS KMS key. It is not necessary to use the same key for all the resources.
