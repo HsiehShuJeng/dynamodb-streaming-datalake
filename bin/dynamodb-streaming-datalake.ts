@@ -41,14 +41,18 @@ getAccountId().then(consumerAccountId => {
         datalakeBucketName: sameAccountBucketName,
         datalakeBucketKeyAliasName: 'alias/DataLake',
         createNewKmsKey4Kinesis: true,
-        sameAccountFirehoseRoleName: sameAccountFirehoseRoleName,
-        sameAccountDdbReadRoleName: producerDdbReadRoleName,
-        sameAccountDdbTableName: producerDdbTableName,
-        crossAccountGlueJobRoleName: glueJobRoleName,
-        crossAccountFirehoseRoleName: crossAccountFirehoseRoleName,
-        crossAccountAccountId: consumerAccountId!,
-        crossAccountBucketName: crossAccountBucketName,
-        crossAccountBucketKeyId: '6a7083d5-cac9-421e-b0a4-3373805c63d7'
+        producerMeta: {
+            fireHoseRoleName: sameAccountFirehoseRoleName,
+            ddbReadRoleName: producerDdbReadRoleName,
+            ddbTableName: producerDdbTableName,
+        },
+        consumerMeta: {
+            glueJobRoleName: glueJobRoleName,
+            fireHoseRoleName: crossAccountFirehoseRoleName,
+            accountId: consumerAccountId!,
+            bucketName: crossAccountBucketName,
+            bucketKeyId: '6a7083d5-cac9-421e-b0a4-3373805c63d7'
+        }
         /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
     });
     new ConsumerStack(consumerApp, 'ConsumerStack', {

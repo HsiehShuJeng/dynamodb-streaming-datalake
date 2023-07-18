@@ -14,14 +14,8 @@ interface DynamodbStreamingDatalakeStackProps extends cdk.StackProps {
     datalakeBucketName: string,
     datalakeBucketKeyAliasName: string,
     createNewKmsKey4Kinesis: boolean,
-    sameAccountDdbTableName: string
-    sameAccountFirehoseRoleName: string,
-    sameAccountDdbReadRoleName: string,
-    crossAccountGlueJobRoleName: string,
-    crossAccountFirehoseRoleName: string,
-    crossAccountAccountId: string,
-    crossAccountBucketName: string,
-    crossAccountBucketKeyId: string
+    producerMeta: ProducerMeta,
+    consumerMeta: ConsumerMeta
 }
 
 export class DynamodbStreamingDatalakeStack extends cdk.Stack {
@@ -29,6 +23,17 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
     exampleDdbTable: dynamodb.ITable;
     constructor(scope: Construct, id: string, props: DynamodbStreamingDatalakeStackProps) {
         super(scope, id, props);
+
+        const consumerAccountId = props.consumerMeta.accountId;
+        const consumerBucketName = props.consumerMeta.bucketName;
+        const consumerBucketKmsKeyId = props.consumerMeta.bucketKeyId;
+        const consumerGlueJobRoleName = props.consumerMeta.glueJobRoleName;
+        const consumerFireHoseRoleName = props.consumerMeta.fireHoseRoleName;
+
+        const producerDdbTableName = props.producerMeta.ddbTableName;
+        const producerFireHoseRoleName = props.producerMeta.fireHoseRoleName;
+        const producerDdbReadRoleName = props.producerMeta.ddbReadRoleName;
+
 
         this.fixedS3Prefix = 'dynamodb/aws21';
         let kmsKey4Kinesis: kms.IKey;
@@ -60,7 +65,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         const jsonProcessor = new JsonProcessor(this, 'JsonProcessor', { kmsKinesisKeyArn: kmsKey4Kinesis.keyArn });
 
         this.exampleDdbTable = new dynamodb.Table(this, 'ExampleDdbTable', {
-            tableName: props.sameAccountDdbTableName,
+            tableName: producerDdbTableName,
             kinesisStream: ddbStream,
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             pointInTimeRecovery: true,
@@ -77,7 +82,7 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         });
 
         const firehoseDeliveryRole = new iam.Role(this, 'FirehoseDeliveryRole', {
-            roleName: props.sameAccountFirehoseRoleName,
+            roleName: producerFireHoseRoleName,
             assumedBy: new iam.ServicePrincipal('firehose.amazonaws.com'),
             description: 'Role for Firehose to deliver data to S3',
             inlinePolicies: {
@@ -242,10 +247,10 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
         });
         sameAccountDeliveryStream.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
 
-        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(jsonProcessor.lambdaEntity, ddbStream, kmsKey4Kinesis, props.crossAccountFirehoseRoleName, props.crossAccountAccountId, props.crossAccountBucketName, props.crossAccountBucketKeyId);
+        const crossAccountFirehoseDeliveryStream = this.createCrossAccountFirehoseDeliveryStream(jsonProcessor.lambdaEntity, ddbStream, kmsKey4Kinesis, consumerFireHoseRoleName, consumerAccountId, consumerBucketName, consumerBucketKmsKeyId);
         const ddbReadIamRole = new iam.Role(this, 'DdbCrossAccount4Glue', {
-            roleName: props.sameAccountDdbReadRoleName,
-            assumedBy: new iam.ArnPrincipal(`arn:aws:iam::${props.crossAccountAccountId}:role/${props.crossAccountGlueJobRoleName}`),
+            roleName: producerDdbReadRoleName,
+            assumedBy: new iam.ArnPrincipal(`arn:aws:iam::${consumerAccountId}:role/${consumerGlueJobRoleName}`),
             managedPolicies: [
                 iam.ManagedPolicy.fromAwsManagedPolicyName(
                     'AmazonDynamoDBReadOnlyAccess'
@@ -459,4 +464,21 @@ export class DynamodbStreamingDatalakeStack extends cdk.Stack {
             }
         });
     }
+}
+
+
+
+interface ConsumerMeta {
+    glueJobRoleName: string,
+    fireHoseRoleName: string,
+    accountId: string,
+    bucketName: string,
+    bucketKeyId: string
+}
+
+
+interface ProducerMeta {
+    ddbTableName: string
+    fireHoseRoleName: string,
+    ddbReadRoleName: string,
 }
