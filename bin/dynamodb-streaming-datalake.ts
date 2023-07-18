@@ -21,7 +21,10 @@ const sts = new STSClient({
 getAccountId().then(consumerAccountId => {
     console.log(`Producer Account ID: ${process.env.CDK_DEFAULT_ACCOUNT}`)
     console.log(`Consumer Account ID: ${consumerAccountId}`)
-    const crossAccountBucketName: string = `dynamodb-streaming-datalake-${consumerAccountId}`
+    const crossAccountBucketName: string = `dynamodb-streaming-datalake-${consumerAccountId}`;
+    const producerDdbReadRoleName: string = 'dynamodb-cross-account-read-role';
+    const producerDdbTableName: string = 'example-ddb-table';
+    const glueJobRoleName: string = 'ddb-cross-account-full-load-glue-job-role';
     new DynamodbStreamingDatalakeStack(producerApp, 'DynamodbStreamingDatalakeStack', {
         /* If you don't specify 'env', this stack will be environment-agnostic.
          * Account/Region-dependent features and context lookups will not work,
@@ -38,17 +41,28 @@ getAccountId().then(consumerAccountId => {
         datalakeBucketName: sameAccountBucketName,
         datalakeBucketKeyAliasName: 'alias/DataLake',
         createNewKmsKey4Kinesis: true,
-        sameAccountFirehoseRoleName: sameAccountFirehoseRoleName,
-        crossAccountFirehoseRoleName: crossAccountFirehoseRoleName,
-        crossAccountAccountId: consumerAccountId!,
-        crossAccountBucketName: crossAccountBucketName
+        producerMeta: {
+            fireHoseRoleName: sameAccountFirehoseRoleName,
+            ddbReadRoleName: producerDdbReadRoleName,
+            ddbTableName: producerDdbTableName,
+        },
+        consumerMeta: {
+            glueJobRoleName: glueJobRoleName,
+            fireHoseRoleName: crossAccountFirehoseRoleName,
+            accountId: consumerAccountId!,
+            bucketName: crossAccountBucketName,
+            bucketKeyId: '6a7083d5-cac9-421e-b0a4-3373805c63d7'
+        }
         /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
     });
     new ConsumerStack(consumerApp, 'ConsumerStack', {
         env: { account: consumerAccountId, region: 'ap-northeast-1' },
         producerAccountId: process.env.CDK_DEFAULT_ACCOUNT!,
         producerFirehoseRoleName: crossAccountFirehoseRoleName,
-        datalakeBucketName: crossAccountBucketName
+        datalakeBucketName: crossAccountBucketName,
+        producerDdbReadRoleName: producerDdbReadRoleName,
+        producerDdbTableName: producerDdbTableName,
+        producerGlueJobRoleName: glueJobRoleName,
     });
     producerApp.synth()
     consumerApp.synth()
